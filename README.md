@@ -18,11 +18,11 @@ Transformar esforço invisível em progresso visível: o sistema captura os movi
 
 ## Fluxo Único
 
-1. Paciente veste o hardware no braço e abre a sessão do dia → 2. Executa os movimentos guiados (dados simulados nesta etapa) → 3. Vê resultado imediato da sessão + evolução semanal → 4. Fisioterapeuta revisa o painel de evolução.
+1. Paciente veste o hardware (real) no braço e abre a sessão do dia → 2. Executa os movimentos guiados (dados reais do hardware) → 3. Vê resultado imediato da sessão + evolução semanal → 4. Fisioterapeuta revisa o painel de evolução.
 
 ## O que Ficou de Fora (Fora do Escopo) — Obrigatório
 
-- Construção/validação clínica do hardware real (nesta etapa dados serão simulados/mockados).
+- Validação clínica formal / certificação médica do hardware (protótipo real em uso, sem certificação nesta etapa).
 - Diagnóstico automático ou prescrição de tratamento pelo sistema.
 - Suporte a outras partes do corpo (perna, ombro, mão fina) — só braço.
 - Gamificação completa, ranking social, multiplayer.
