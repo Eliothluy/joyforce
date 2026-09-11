@@ -2,21 +2,21 @@
 
 Repositório para o trabalho de engenharia de software 2026.4, na Universidade Federal do Pará.
 
-## Problema
+## 🎯 Problema
 
 Pessoas com dificuldades motoras no braço abandonam a fisioterapia por falta de estímulo e por não enxergarem progresso. O tratamento é repetitivo, cansativo e o paciente não sabe se está melhorando, o que derruba a aderência.
 
-## Usuários
+## 👥 Usuários
 
 1. **Paciente com dificuldade motora no braço** — usuário principal, faz as sessões em casa/clínica.
 2. **Fisioterapeuta** — acompanha a evolução e ajusta o plano.
 3. **Gestor/dono de clínica-hospital** *(stakeholder indireto)* — visualiza aderência agregada, não usa o fluxo diário.
 
-## Proposta de Valor
+## 💡 Proposta de Valor
 
 Transformar esforço invisível em progresso visível: o sistema captura os movimentos do hardware no braço e mostra, em linguagem simples, o quanto o paciente evoluiu em amplitude, repetições e constância semana a semana — motivando a continuar e dando ao fisio dados objetivos.
 
-## Fluxo Único
+## 🔄 Fluxo Único
 
 1. Paciente veste o hardware (real) no braço e abre a sessão do dia → 2. Executa os movimentos guiados (dados reais do hardware) → 3. Vê resultado imediato da sessão + evolução semanal → 4. Fisioterapeuta revisa o painel de evolução.
 
@@ -36,7 +36,8 @@ Transformar esforço invisível em progresso visível: o sistema captura os movi
 
 > Todos como colaboradores do repositório.
 
-- Integrantes: _a preencher (nome + username GitHub)_
+- Integrantes:**Bárbara Vitória das Neves Cecim - barbaracecim
+
 - Professor: _a preencher (nome + username GitHub)_
 
 Para adicionar colaboradores: GitHub → Settings → Collaborators and teams → Add people.
