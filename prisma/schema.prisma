@@ -1,0 +1,158 @@
+// Schema do JoyForce — Postgres 16 (Docker local / Neon em produção).
+//
+// Identificadores e nomes em pt-BR para casar com o ERS (P2, v0.1) e com
+// src/lib/domain/contratos.ts. Os ids dos dados do seed são determinísticos
+// (usr_ana, pac_maria, ses_maria_01…) para facilitar upserts e testes.
+//
+// Fluxo único do ERS: cadastrar paciente → conectar e calibrar → avaliação
+// inicial → registrar resultados → repetir sessões → comparar evolução.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Direcao {
+  FRENTE
+  TRAS
+  ESQUERDA
+  DIREITA
+}
+
+enum TipoAvaliacao {
+  INICIAL
+  ACOMPANHAMENTO
+}
+
+enum StatusSessao {
+  PREPARANDO
+  EM_ANDAMENTO
+  CONCLUIDA
+  ABORTADA
+}
+
+/// Fisioterapeuta (usuário principal do ERS). Autentica por e-mail + senha
+/// (bcrypt) e recebe uma SessaoAcesso com cookie httpOnly.
+model Usuario {
+  id        String   @id
+  nome      String
+  email     String   @unique
+  senhaHash String
+  criadoEm  DateTime @default(now())
+
+  sessoesAcesso SessaoAcesso[]
+  pacientes     Paciente[]     @relation("PacientesCriados")
+}
+
+/// Sessão de acesso (login). No banco grava-se somente o hash SHA-256 do
+/// token; o token puro vive apenas no cookie do navegador. Validade: 8 h.
+model SessaoAcesso {
+  id        String   @id
+  usuarioId String
+  tokenHash String   @unique
+  expiraEm  DateTime
+  criadoEm  DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
+/// Paciente em reabilitação de membro superior. Escopo: cada fisioterapeuta
+/// vê somente os pacientes que criou (criadoPorId); acesso de outro usuário
+/// é tratado como 404, nunca 403.
+model Paciente {
+  id               String   @id
+  nome             String
+  dataNascimento   DateTime @db.Date
+  lesaoDiagnostico String
+  telefone         String
+  criadoPorId      String
+  criadoEm         DateTime @default(now())
+
+  criadoPor  Usuario     @relation("PacientesCriados", fields: [criadoPorId], references: [id])
+  avaliacoes Avaliacao[]
+  sessoes    Sessao[]
+
+  @@index([criadoPorId])
+  @@index([criadoPorId, nome])
+}
+
+/// Avaliação (RF-04): exatamente uma INICIAL por paciente; as seguintes são
+/// ACOMPANHAMENTO. Criada manualmente (linha de base) ou ao concluir uma
+/// sessão — nesse caso os 4 alcances recebem a amplitudeMaxima da sessão.
+model Avaliacao {
+  id              String        @id
+  pacienteId      String
+  tipo            TipoAvaliacao
+  dataHora        DateTime
+  alcanceFrente   Int
+  alcanceTras     Int
+  alcanceEsquerda Int
+  alcanceDireita  Int
+  /// Sessão de origem, quando a avaliação nasce do fim de uma sessão.
+  sessaoId        String?       @unique
+
+  paciente Paciente @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  sessao   Sessao?  @relation(fields: [sessaoId], references: [id], onDelete: SetNull)
+
+  @@index([pacienteId])
+}
+
+/// Sessão de exercício (RF-03/RF-05). Os agregados (totalRepeticoesValidas,
+/// amplitudeMaxima, ultimaSequencia) são recalculados na mesma transação em
+/// que novos lotes de repetições são gravados.
+model Sessao {
+  id                     String       @id
+  pacienteId             String
+  status                 StatusSessao @default(PREPARANDO)
+  inicio                 DateTime
+  fim                    DateTime?
+  calibracaoAceita       Boolean      @default(false)
+  totalRepeticoesValidas Int          @default(0)
+  amplitudeMaxima        Float        @default(0)
+  /// Maior sequência de lote já gravada — idempotência do reenvio (RNF-03).
+  ultimaSequencia        Int          @default(0)
+
+  paciente   Paciente    @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  exercicio  Exercicio?
+  repeticoes Repeticao[]
+  avaliacao  Avaliacao?
+
+  @@index([pacienteId, status])
+}
+
+/// Exercicio da sessão. Todo sessão nova nasce com o padrão do contrato:
+/// direcao=FRENTE, zona -30..30, limiar=120, tempoMaxMs=10000 (RF-05).
+model Exercicio {
+  id            String  @id
+  sessaoId      String  @unique
+  direcao       Direcao
+  zonaNeutraMin Int
+  zonaNeutraMax Int
+  limiar        Int
+  tempoMaxMs    Int
+
+  sessao Sessao @relation(fields: [sessaoId], references: [id], onDelete: Cascade)
+}
+
+/// Repetição registrada em lote pela fila do navegador (RF-05). `valida` é
+/// decidido pela máquina de estados do dispositivo no cliente; o servidor
+/// apenas conta as válidas e recalcula os agregados da sessão.
+model Repeticao {
+  id        String @id
+  sessaoId  String
+  ordem     Int
+  tInicioMs Int
+  duracaoMs Int
+  amplitude Float
+  valida    Boolean
+
+  sessao Sessao @relation(fields: [sessaoId], references: [id], onDelete: Cascade)
+
+  @@index([sessaoId])
+}
