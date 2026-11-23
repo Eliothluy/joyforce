@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { obterUsuarioAtual } from '@/lib/server/auth'
-import { obterSessaoDetalhe } from '@/lib/server/consultas'
+import { obterNomePaciente, obterSessaoDetalhe } from '@/lib/server/consultas'
 import { CabecalhoApp } from '@/components/CabecalhoApp'
 import { PreparacaoSessao } from './preparacao-sessao'
 
@@ -13,6 +13,8 @@ export default async function PaginaPrepararSessao({ params }: { params: Promise
   if (!detalhe) notFound()
   if (detalhe.sessao.status === 'CONCLUIDA') redirect(`/sessao/${id}/resultado`)
 
+  const pacienteNome = await obterNomePaciente(usuario.id, detalhe.sessao.pacienteId)
+
   return (
     <div className="min-h-dvh">
       <CabecalhoApp usuario={usuario} />
@@ -20,6 +22,7 @@ export default async function PaginaPrepararSessao({ params }: { params: Promise
         <PreparacaoSessao
           sessaoId={detalhe.sessao.id}
           pacienteId={detalhe.sessao.pacienteId}
+          pacienteNome={pacienteNome}
           exercicio={detalhe.exercicio}
           calibracaoAceita={detalhe.sessao.calibracaoAceita}
         />

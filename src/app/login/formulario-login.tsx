@@ -42,7 +42,7 @@ export function FormularioLogin() {
     definirEnviando(true)
     try {
       await entrar(interpretado.data)
-      navegador.replace('/fisio/pacientes')
+      navegador.replace('/')
       navegador.refresh()
     } catch (erro) {
       definirErroGeral(mensagemDeErro(erro))

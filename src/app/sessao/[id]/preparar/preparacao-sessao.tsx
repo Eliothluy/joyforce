@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Botao } from '@/components/Botao'
 import { Card } from '@/components/Card'
 import { GraficoSinal } from '@/components/GraficoSinal'
+import { IconeCheck } from '@/components/Icones'
 import { formatarMedida, rotuloDirecao } from '@/lib/domain/constantes'
 import {
   JANELA_CALIBRACAO_MS,
@@ -39,12 +40,19 @@ function Chip({ tom, children }: { tom: 'ok' | 'ativo' | 'parado' | 'erro'; chil
 type PropriedadesPreparacao = {
   sessaoId: string
   pacienteId: string
+  pacienteNome?: string | null
   exercicio: ExercicioDTO
   /** Sessão retomada já com calibração aceita (RF-03 cumprido antes). */
   calibracaoAceita: boolean
 }
 
-export function PreparacaoSessao({ sessaoId, pacienteId, exercicio, calibracaoAceita }: PropriedadesPreparacao) {
+export function PreparacaoSessao({
+  sessaoId,
+  pacienteId,
+  pacienteNome = null,
+  exercicio,
+  calibracaoAceita,
+}: PropriedadesPreparacao) {
   const navegador = useRouter()
 
   const barramentoRef = useRef<ReturnType<typeof criarBarramento> | null>(null)
@@ -221,11 +229,27 @@ export function PreparacaoSessao({ sessaoId, pacienteId, exercicio, calibracaoAc
   const podeIniciarExercicio = conectado && calibrada
   const podeCalibrar = conectado && !calibrada
 
+  const progressoJanelaPct = Math.min(100, Math.round((progressoCalibracao / JANELA_CALIBRACAO_MS) * 100))
+  const variacaoExibida =
+    variacaoAoVivo ?? (faseCalibracao === 'rejeitada' ? variacaoMedida : null)
+  const variacaoPct =
+    variacaoExibida !== null
+      ? Math.min(100, Math.round((variacaoExibida / (LIMIAR_CALIBRACAO_UNIDADES * 2)) * 100))
+      : 0
+  const variacaoAcimaLimite =
+    variacaoExibida !== null && variacaoExibida > LIMIAR_CALIBRACAO_UNIDADES
+
+  const etapas = [
+    { numero: 1, rotulo: 'Conectar', concluida: conectado, ativa: !conectado },
+    { numero: 2, rotulo: 'Calibrar', concluida: calibrada, ativa: conectado && !calibrada },
+    { numero: 3, rotulo: 'Iniciar', concluida: podeIniciarExercicio, ativa: podeIniciarExercicio },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="etiqueta">Sessão</p>
+          <p className="etiqueta">{pacienteNome ? `Sessão · ${pacienteNome}` : 'Sessão'}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Preparar o exercício</h1>
           <p className="mt-1 text-sm text-muted">
             Conecte o dispositivo, mantenha-o em repouso para calibrar e só então inicie.
@@ -238,6 +262,35 @@ export function PreparacaoSessao({ sessaoId, pacienteId, exercicio, calibracaoAc
           Cancelar e voltar para a ficha
         </Link>
       </div>
+
+      {/* Indicador de progresso em 3 etapas */}
+      <ol aria-label="Etapas da preparação" className="grid grid-cols-3 gap-2">
+        {etapas.map((etapa) => (
+          <li
+            key={etapa.numero}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+              etapa.concluida
+                ? 'border-brand/40 bg-brand-soft text-brand-strong'
+                : etapa.ativa
+                  ? 'border-brand bg-card text-ink'
+                  : 'border-line bg-paper/50 text-muted'
+            }`}
+          >
+            <span
+              className={`numero flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
+                etapa.concluida
+                  ? 'bg-brand text-white'
+                  : etapa.ativa
+                    ? 'bg-ink text-paper'
+                    : 'bg-line text-muted'
+              }`}
+            >
+              {etapa.concluida ? <IconeCheck className="h-3 w-3" /> : etapa.numero}
+            </span>
+            <span className="truncate">{etapa.rotulo}</span>
+          </li>
+        ))}
+      </ol>
 
       <Card>
         <div className="mb-3 flex items-center justify-between">
@@ -273,9 +326,7 @@ export function PreparacaoSessao({ sessaoId, pacienteId, exercicio, calibracaoAc
               ? 'Conectado'
               : estadoConexao === 'conectando'
                 ? 'Conectando…'
-                : estadoConexao === 'falhou'
-                  ? 'Desconectado'
-                  : 'Desconectado'}
+                : 'Desconectado'}
           </Chip>
         </div>
 
@@ -353,11 +404,7 @@ export function PreparacaoSessao({ sessaoId, pacienteId, exercicio, calibracaoAc
           </Chip>
         </div>
 
-        <p
-          role="status"
-          aria-live="polite"
-          className="mt-2 text-sm text-muted"
-        >
+        <p role="status" aria-live="polite" className="mt-2 text-sm text-muted">
           {faseCalibracao === 'coletando'
             ? 'Mantenha o dispositivo em repouso — coletando a janela de 3 s.'
             : faseCalibracao === 'aceita'
@@ -367,17 +414,38 @@ export function PreparacaoSessao({ sessaoId, pacienteId, exercicio, calibracaoAc
                 : 'Durante a calibração, o dispositivo deve ficar parado sobre a mesa.'}
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+        {/* Medidor visual da janela de 3 s e da variação ao vivo vs limite de 50 unid. */}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="etiqueta">Variação ao vivo</p>
-            <p className="numero mt-0.5 text-xl font-semibold">
-              {variacaoAoVivo !== null ? formatarMedida(variacaoAoVivo) : '—'}
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="etiqueta">Variação em repouso</p>
+              <span className="numero text-xs text-muted">limite ≤ {LIMIAR_CALIBRACAO_UNIDADES} unid.</span>
+            </div>
+            <p className="numero mt-1 text-xl font-semibold">
+              {variacaoExibida !== null ? formatarMedida(variacaoExibida) : '—'}
               <span className="ml-1 text-xs font-normal text-muted">unid.</span>
             </p>
+            <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-line">
+              <div
+                aria-hidden="true"
+                className="absolute bottom-0 top-0 left-1/2 z-10 w-0.5 bg-ink/40"
+                title={`Limite: ${LIMIAR_CALIBRACAO_UNIDADES} unidades`}
+              />
+              <div
+                className={`h-full rounded-full transition-all duration-100 ${
+                  variacaoAcimaLimite ? 'bg-danger' : 'bg-brand'
+                }`}
+                style={{ width: `${variacaoPct}%` }}
+              />
+            </div>
           </div>
+
           <div>
-            <p className="etiqueta">Janela</p>
-            <p className="numero mt-0.5 text-xl font-semibold">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="etiqueta">Janela de repouso</p>
+              <span className="numero text-xs text-muted">meta {JANELA_CALIBRACAO_MS / 1000} s</span>
+            </div>
+            <p className="numero mt-1 text-xl font-semibold">
               {Math.min(JANELA_CALIBRACAO_MS, progressoCalibracao) / 1000 > 0
                 ? `${(Math.min(JANELA_CALIBRACAO_MS, progressoCalibracao) / 1000).toFixed(1)} s`
                 : '—'}
@@ -385,24 +453,23 @@ export function PreparacaoSessao({ sessaoId, pacienteId, exercicio, calibracaoAc
                 de {JANELA_CALIBRACAO_MS / 1000} s
               </span>
             </p>
-          </div>
-          <div>
-            <p className="etiqueta">Limite aceito</p>
-            <p className="numero mt-0.5 text-xl font-semibold">
-              ≤ {LIMIAR_CALIBRACAO_UNIDADES}
-              <span className="ml-1 text-xs font-normal text-muted">unid.</span>
-            </p>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-brand transition-all duration-100"
+                style={{ width: `${faseCalibracao === 'aceita' ? 100 : progressoJanelaPct}%` }}
+              />
+            </div>
           </div>
         </div>
 
         {faseCalibracao === 'rejeitada' && variacaoMedida !== null ? (
-          <p role="alert" className="mt-2 text-sm text-danger">
+          <p role="alert" className="mt-3 text-sm text-danger">
             Variação medida: {formatarMedida(variacaoMedida)} unidades — acima de{' '}
             {LIMIAR_CALIBRACAO_UNIDADES}.
           </p>
         ) : null}
 
-        <div className="mt-3">
+        <div className="mt-4">
           <Botao onClick={iniciarCalibracao} disabled={!podeCalibrar} carregando={faseCalibracao === 'verificando'}>
             {faseCalibracao === 'aceita'
               ? 'Calibração concluída'

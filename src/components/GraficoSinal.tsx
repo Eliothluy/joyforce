@@ -58,10 +58,20 @@ export function GraficoSinal({
     const corZona = escuro ? 'rgba(228, 241, 236, 0.14)' : corMarcaSuave
     const corGrade = escuro ? 'rgba(223, 227, 226, 0.25)' : corLinha
 
+    const referenciaBase = Math.max(
+      Math.abs(zonaNeutraMin),
+      Math.abs(zonaNeutraMax),
+      Math.abs(limiar) * 2.25,
+      270,
+    )
+    let limiteDinamico = referenciaBase
+
     const cancelar = referenciaInscrever.current((amostra) => {
       const buffer = referenciaBuffer.current
       buffer.push(amostra)
       if (buffer.length > janela) buffer.splice(0, buffer.length - janela)
+      const pico = Math.abs(amostra.valor) * 1.12
+      if (pico > limiteDinamico) limiteDinamico = pico
       referenciaSujo.current = true
     })
 
@@ -91,8 +101,8 @@ export function GraficoSinal({
       contexto.fillStyle = fundo
       contexto.fillRect(0, 0, largura, alturaCss)
 
-      const limite = Math.max(Math.abs(zonaNeutraMin), Math.abs(zonaNeutraMax), Math.abs(limiar), 1) * 1.35
-      const yDe = (valor: number) => alturaCss / 2 - (valor / limite) * (alturaCss / 2 - 6)
+      const limite = limiteDinamico
+      const yDe = (valor: number) => alturaCss / 2 - (valor / limite) * (alturaCss / 2 - 8)
       const xDe = (indice: number, total: number) =>
         total <= 1 ? largura : (indice / (total - 1)) * largura
 

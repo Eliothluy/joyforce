@@ -9,7 +9,7 @@ import { enviarLoteRepeticoes, concluirSessao, abortarSessao, mensagemDeErro } f
 import { FakeDevice } from '@/lib/device/fake-device'
 import { criarBarramento } from '@/lib/device/barramento'
 import { criarMaquinaRepeticao } from '@/lib/device/maquina-repeticao'
-import type { MaquinaRepeticao, RepeticaoDetectada } from '@/lib/device/maquina-repeticao'
+import type { EstadoCiclo, MaquinaRepeticao, RepeticaoDetectada } from '@/lib/device/maquina-repeticao'
 import type { Dispositivo, ParametrosExercicio } from '@/lib/device/tipos'
 import type { ExercicioDTO, SessaoDTO } from '@/lib/domain/contratos'
 
@@ -18,7 +18,26 @@ type Tela = 'exercendo' | 'pausado' | 'confirmando-concluir' | 'confirmando-abor
 
 type AmplitudeRecente = { amplitude: number; valida: boolean }
 
-export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exercicio: ExercicioDTO }) {
+function mensagemGuia(estado: EstadoCiclo, limiar: number): string {
+  switch (estado) {
+    case 'DENTRO_ZONA':
+      return 'Posição neutra — pronto para iniciar o movimento'
+    case 'FORA_ZONA':
+      return `Continue avançando até atingir o limiar (${limiar} unid.)`
+    case 'LIMIAR_ATINGIDO':
+      return 'Limiar atingido! Volte à zona neutra para contar'
+  }
+}
+
+export function ExecucaoSessao({
+  sessao,
+  exercicio,
+  pacienteNome = null,
+}: {
+  sessao: SessaoDTO
+  exercicio: ExercicioDTO
+  pacienteNome?: string | null
+}) {
   const navegador = useRouter()
 
   const parametros: ParametrosExercicio = {
@@ -47,9 +66,12 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
   const [erroConexao, definirErroConexao] = useState<string | null>(null)
   const [tela, definirTela] = useState<Tela>('exercendo')
   const [contadorValidas, definirContadorValidas] = useState(sessao.totalRepeticoesValidas)
+  const [amplitudeMaxSessao, definirAmplitudeMaxSessao] = useState(sessao.amplitudeMaxima)
   const [pendentes, definirPendentes] = useState(0)
   const [amplitudesRecentes, definirAmplitudesRecentes] = useState<AmplitudeRecente[]>([])
   const [tempoCicloMs, definirTempoCicloMs] = useState(0)
+  const [estadoCiclo, definirEstadoCiclo] = useState<EstadoCiclo>('DENTRO_ZONA')
+  const [amplitudeCicloAtual, definirAmplitudeCicloAtual] = useState(0)
   const [estourouTempo, definirEstourouTempo] = useState(false)
   const [erroRede, definirErroRede] = useState<string | null>(null)
   const [erroConclusao, definirErroConclusao] = useState<string | null>(null)
@@ -66,6 +88,7 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
     definirAmplitudesRecentes((atual) =>
       [{ amplitude: repeticao.amplitude, valida: repeticao.valida }, ...atual].slice(0, 6),
     )
+    definirAmplitudeMaxSessao((atual) => Math.max(atual, repeticao.amplitude))
     if (repeticao.valida) definirContadorValidas((valor) => valor + 1)
     void despachar()
   }
@@ -157,8 +180,8 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
     // e atualizam estado na forma funcional, então não dependem do render.
   }, [])
 
-  // Relógio do ciclo corrente: lido no requestAnimationFrame (RNF-01), não
-  // a cada amostra — a máquina de estados continua processando a 50 Hz.
+  // Relógio e orientação do ciclo corrente: lidos no requestAnimationFrame
+  // (RNF-01), nunca dentro do callback de 50 Hz do dispositivo.
   useEffect(() => {
     let quadro = 0
     let ultimaMarcacao = 0
@@ -167,6 +190,8 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
       if (agora - ultimaMarcacao < 100) return
       ultimaMarcacao = agora
       const maquina = maquinaRef.current
+      definirEstadoCiclo(maquina.estado)
+      definirAmplitudeCicloAtual(maquina.amplitudeCiclo)
       if (maquina.estado === 'DENTRO_ZONA') {
         definirTempoCicloMs(0)
         definirEstourouTempo(false)
@@ -231,13 +256,27 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
   const conectado = estadoConexao === 'conectado'
   const tempoCicloTexto =
     tela === 'exercendo' && tempoCicloMs > 0 ? `${(tempoCicloMs / 1000).toFixed(1)} s` : '—'
+  const progressoTempoPct =
+    tela === 'exercendo' ? Math.min(100, Math.round((tempoCicloMs / exercicio.tempoMaxMs) * 100)) : 0
+  const progressoLimiarPct =
+    tela === 'exercendo'
+      ? Math.min(100, Math.round((amplitudeCicloAtual / Math.max(exercicio.limiar, 1)) * 100))
+      : 0
+
+  const escalaMiniBarras = Math.max(
+    exercicio.limiar * 1.4,
+    ...amplitudesRecentes.map((r) => r.amplitude),
+    260,
+  )
+  const recentesCronologico = [...amplitudesRecentes].reverse()
 
   return (
-    <div className="kiosk flex min-h-dvh flex-col p-4 sm:p-6">
+    <div className="kiosk flex min-h-dvh flex-col p-3 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-semibold tracking-tight">
             Exercício — {rotuloDirecao[exercicio.direcao]}
+            {pacienteNome ? <span className="ml-2 font-normal text-paper/70">· {pacienteNome}</span> : null}
           </span>
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -264,7 +303,7 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
       </div>
 
       {estadoConexao === 'falhou' ? (
-        <div className="mt-4 rounded-lg border border-signal/40 bg-signal-soft px-4 py-3 text-sm text-signal">
+        <div className="mt-3 rounded-lg border border-signal/40 bg-signal-soft px-4 py-3 text-sm text-signal">
           <p className="font-semibold">Não foi possível conectar ao dispositivo.</p>
           <p className="mt-0.5">{erroConexao}</p>
           <div className="mt-2">
@@ -275,8 +314,27 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
         </div>
       ) : null}
 
-      <div className="mt-4 grid flex-1 gap-4 lg:grid-cols-[1fr_340px]">
-        <div className="rounded-[14px] border border-line/30 p-3">
+      <div className="mt-3 grid flex-1 gap-3 lg:grid-cols-[1fr_340px]">
+        <div className="flex flex-col justify-between rounded-[14px] border border-line/30 p-3 sm:p-4">
+          {/* Orientação ao vivo do movimento */}
+          <div
+            aria-live="polite"
+            className={`mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 ${
+              estadoCiclo === 'LIMIAR_ATINGIDO'
+                ? 'border-brand/60 bg-brand/20 text-paper'
+                : estadoCiclo === 'FORA_ZONA'
+                  ? 'border-signal/60 bg-signal/20 text-paper'
+                  : 'border-line/20 bg-paper/5 text-paper/85'
+            }`}
+          >
+            <p className="text-sm font-medium">{mensagemGuia(estadoCiclo, exercicio.limiar)}</p>
+            <span className="numero text-xs text-paper/80">
+              {estadoCiclo === 'DENTRO_ZONA'
+                ? 'Em repouso'
+                : `${formatarMedida(amplitudeCicloAtual)} / ${exercicio.limiar} unid.`}
+            </span>
+          </div>
+
           <GraficoSinal
             inscrever={(aoReceber) => {
               const barramento = barramentoRef.current
@@ -286,60 +344,135 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
             zonaNeutraMin={exercicio.zonaNeutraMin}
             zonaNeutraMax={exercicio.zonaNeutraMax}
             limiar={exercicio.limiar}
-            altura={320}
+            altura={240}
             escuro
           />
-          <p className="mt-2 text-xs text-paper/70">
-            Faixa clara: zona neutra ({exercicio.zonaNeutraMin} a {exercicio.zonaNeutraMax}). Linhas
-            tracejadas: limiar de {exercicio.limiar} unidades.
-          </p>
-        </div>
 
-        <div className="flex flex-col gap-4">
-          <div className="rounded-[14px] border border-line/30 px-4 py-6 text-center">
-            <p className="etiqueta">Repetições válidas</p>
-            <div className="numero-gigante mt-2" aria-live="polite" aria-atomic="true">
-              {contadorValidas}
+          <div className="mt-2.5 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-xs text-paper/75">
+              <span>Progresso até o limiar ({exercicio.limiar} unid.)</span>
+              <span className="numero">{progressoLimiarPct}%</span>
             </div>
-            <p className="mt-3 text-xs text-paper/70">
-              Vale ao sair da zona neutra, atingir o limiar e voltar em até{' '}
-              {exercicio.tempoMaxMs / 1000} s.
+            <div className="h-2 w-full overflow-hidden rounded-full bg-paper/15">
+              <div
+                className={`h-full rounded-full transition-all duration-75 ${
+                  estadoCiclo === 'LIMIAR_ATINGIDO' ? 'bg-brand' : 'bg-signal'
+                }`}
+                style={{ width: `${progressoLimiarPct}%` }}
+              />
+            </div>
+            <p className="text-xs text-paper/70">
+              Faixa clara: zona neutra ({exercicio.zonaNeutraMin} a {exercicio.zonaNeutraMax}). Linhas
+              tracejadas: limiar de {exercicio.limiar} unidades.
             </p>
           </div>
+        </div>
 
-          <div className="rounded-[14px] border border-line/30 px-4 py-4 text-center">
-            <p className="etiqueta">Tempo da repetição corrente</p>
-            <p className="numero mt-1 text-3xl font-semibold">{tempoCicloTexto}</p>
-            <div aria-live="polite" className="mt-2 min-h-6">
+        <div className="flex flex-col gap-3">
+          <div className="rounded-[14px] border border-line/30 px-4 py-3.5 text-center">
+            <p className="etiqueta text-paper/70">Repetições válidas</p>
+            <div className="numero-gigante mt-1" aria-live="polite" aria-atomic="true">
+              {contadorValidas}
+            </div>
+            <div className="mt-2 flex items-center justify-center gap-4 border-t border-line/20 pt-2.5 text-xs text-paper/80">
+              <span>
+                Amplitude máx.:{' '}
+                <strong className="numero text-paper">
+                  {amplitudeMaxSessao > 0 ? `${formatarMedida(amplitudeMaxSessao)} unid.` : '—'}
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-[14px] border border-line/30 px-4 py-3 text-center">
+            <p className="etiqueta text-paper/70">Tempo da repetição corrente</p>
+            <p className="numero mt-1 text-2xl font-semibold">{tempoCicloTexto}</p>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-paper/15">
+              <div
+                className={`h-full rounded-full transition-all duration-100 ${
+                  estourouTempo
+                    ? 'bg-danger'
+                    : progressoTempoPct >= 75
+                      ? 'bg-signal'
+                      : 'bg-brand'
+                }`}
+                style={{ width: `${progressoTempoPct}%` }}
+              />
+            </div>
+            <div aria-live="polite" className="mt-1.5 min-h-5">
               {estourouTempo ? (
                 <span className="inline-flex rounded-full bg-signal-soft px-2.5 py-0.5 text-xs font-semibold text-signal">
                   Passou de {exercicio.tempoMaxMs / 1000} s — esta repetição não vale
                 </span>
-              ) : null}
+              ) : (
+                <span className="text-xs text-paper/65">
+                  Limite: {exercicio.tempoMaxMs / 1000} s por ida e volta
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="rounded-[14px] border border-line/30 px-4 py-4">
-            <p className="etiqueta">Últimas amplitudes</p>
-            {amplitudesRecentes.length === 0 ? (
-              <p className="mt-1 text-sm text-paper/70">Nenhuma repetição concluída ainda.</p>
+          <div className="rounded-[14px] border border-line/30 px-4 py-3">
+            <p className="etiqueta text-paper/70">Últimas amplitudes</p>
+            {recentesCronologico.length === 0 ? (
+              <p className="mt-2 text-sm text-paper/70">Nenhuma repetição concluída ainda.</p>
             ) : (
-              <ul className="mt-2 flex flex-wrap gap-2">
-                {amplitudesRecentes.map((registro, indice) => (
-                  <li
-                    key={`${indice}-${registro.amplitude}`}
-                    className={`numero rounded-lg border px-2 py-1 text-sm ${
-                      registro.valida
-                        ? 'border-brand/50 text-paper'
-                        : 'border-signal/50 text-signal-soft'
-                    }`}
-                    title={registro.valida ? 'Repetição válida' : 'Não atingiu o limiar ou estourou o tempo'}
-                  >
-                    {formatarMedida(registro.amplitude)}
-                    {registro.valida ? '' : ' · não vale'}
-                  </li>
-                ))}
-              </ul>
+              <>
+                {/* Mini barras proporcionais com linha tracejada do limiar */}
+                <div className="relative mt-2 flex h-12 items-end gap-2 rounded-lg bg-paper/5 px-2.5 pb-1 pt-2">
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-signal/80"
+                    style={{
+                      bottom: `${Math.min(95, Math.round((exercicio.limiar / escalaMiniBarras) * 100))}%`,
+                    }}
+                  />
+                  {recentesCronologico.map((registro, indice) => {
+                    const alturaPct = Math.max(
+                      10,
+                      Math.round((registro.amplitude / escalaMiniBarras) * 100),
+                    )
+                    return (
+                      <div
+                        key={`mini-${indice}-${registro.amplitude}`}
+                        className="flex h-full flex-1 flex-col items-center justify-end"
+                        title={
+                          registro.valida
+                            ? `${formatarMedida(registro.amplitude)} unid. — válida`
+                            : `${formatarMedida(registro.amplitude)} unid. — não contou`
+                        }
+                      >
+                        <div
+                          className={`w-full max-w-8 rounded-t ${
+                            registro.valida ? 'bg-brand' : 'border border-dashed border-signal bg-signal/45'
+                          }`}
+                          style={{ height: `${alturaPct}%` }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+                <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                  {amplitudesRecentes.map((registro, indice) => (
+                    <li
+                      key={`${indice}-${registro.amplitude}`}
+                      className={`numero rounded-lg border px-2 py-0.5 text-xs ${
+                        registro.valida
+                          ? 'border-brand/50 text-paper'
+                          : 'border-signal/50 text-signal-soft'
+                      }`}
+                      title={
+                        registro.valida
+                          ? 'Repetição válida'
+                          : 'Não atingiu o limiar ou estourou o tempo'
+                      }
+                    >
+                      {formatarMedida(registro.amplitude)}
+                      {registro.valida ? '' : ' · não vale'}
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
         </div>
@@ -384,7 +517,7 @@ export function ExecucaoSessao({ sessao, exercicio }: { sessao: SessaoDTO; exerc
               <>
                 <h2 className="text-xl font-semibold">Encerrar e gerar o resultado?</h2>
                 <p className="mt-1 text-sm text-muted">
-                  O JoyFire registra {contadorValidas} repetições válidas desta sessão, gera a
+                  O JoyForce registra {contadorValidas} repetições válidas desta sessão, gera a
                   avaliação correspondente e mostra a evolução comparada.
                 </p>
                 {erroConclusao ? (

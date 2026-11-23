@@ -149,10 +149,28 @@ esta (reps e amplitude) e a avaliação `INICIAL` do paciente.
 Em `src/lib/server/consultas.ts`:
 
 ```ts
-listarPacientes(usuarioId: string, q?: string): Promise<PacienteDTO[]>
+listarPacientes(usuarioId: string, q?: string): Promise<PacienteListagemDTO[]>
 obterPacienteDetalhe(usuarioId: string, pacienteId: string): Promise<PacienteDetalheDTO | null>
 obterSessaoDetalhe(usuarioId: string, sessaoId: string): Promise<SessaoDetalheDTO | null>
+obterPainel(usuarioId: string): Promise<PainelDTO>   // dashboard e feed do início
+obterNomePaciente(usuarioId: string, pacienteId: string): Promise<string | null>
 ```
+
+`obterPainel` (11/11/2026, estendido em 23/11/2026) alimenta a página inicial `/`
+como dashboard clínico e feed de atividades. Tipos em `src/types/painel.ts`.
+Deriva **somente** de dados já existentes (sem métrica nova): resumo dos últimos
+7 dias (pacientes ativos, sessões concluídas, repetições válidas, amplitude
+média e variações vs. 7 dias anteriores), série das últimas 6 semanas ISO,
+distribuição de status das sessões, panorama comparativo dos pacientes, sessões
+`PREPARANDO`/`EM_ANDAMENTO` (retomáveis), itens de feed (`SESSAO_CONCLUIDA` com
+variação vs. anterior, `SESSAO_ABORTADA`, `AVALIACAO_INICIAL` **apenas quando
+registrada manualmente**, `PACIENTE_CADASTRADO`) e pacientes sem sessão
+concluída há mais de 7 dias. A página `/` renderiza o painel para quem está
+autenticado e redireciona para `/login` caso contrário; pós-login vai para `/`.
+
+`listarPacientes` devolve `PacienteListagemDTO[]` (`src/types/listagem.ts`),
+superconjunto de `PacienteDTO` com a última sessão concluída, tendência,
+contagens de constância e série recente de repetições.
 
 Em `src/lib/server/auth.ts`:
 

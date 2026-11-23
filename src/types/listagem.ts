@@ -3,9 +3,9 @@
  *
  * `PacienteListagemDTO` é um SUPERCONJUNTO de `PacienteDTO`: mantém todos os
  * campos do contrato e adiciona o que a listagem de pacientes
- * (`/fisio/pacientes`) precisa para as colunas "última sessão", "repetições"
- * e "tendência". Usado por `listarPacientes()` em src/lib/server/consultas.ts
- * (Server Components) e devolvido também por GET /api/pacientes.
+ * (`/fisio/pacientes`) precisa para as colunas "última sessão", "repetições",
+ * "tendência" e mini gráfico de evolução. Usado por `listarPacientes()` em
+ * src/lib/server/consultas.ts (Server Components) e devolvido também por GET /api/pacientes.
  */
 import type { PacienteDTO, StatusSessao } from '@/lib/domain/contratos'
 
@@ -28,4 +28,10 @@ export type PacienteListagemDTO = PacienteDTO & {
    * null quando não há base (menos de 3 anteriores + a última).
    */
   variacaoRepeticoes: number | null
+  totalSessoesConcluidas: number
+  semanasConsecutivas: number
+  diasSemSessao: number | null
+  /** Últimas até 8 sessões concluídas em ordem cronológica (para sparkline). */
+  serieRepeticoes: number[]
+  temAvaliacaoInicial: boolean
 }

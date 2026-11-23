@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { obterUsuarioAtual } from '@/lib/server/auth'
-import { obterSessaoDetalhe } from '@/lib/server/consultas'
+import { obterNomePaciente, obterSessaoDetalhe } from '@/lib/server/consultas'
 import { ExecucaoSessao } from './execucao-sessao'
 
 export default async function PaginaExecutarSessao({ params }: { params: Promise<{ id: string }> }) {
@@ -14,5 +14,13 @@ export default async function PaginaExecutarSessao({ params }: { params: Promise
   if (detalhe.sessao.status === 'CONCLUIDA') redirect(`/sessao/${id}/resultado`)
   if (detalhe.sessao.status === 'PREPARANDO') redirect(`/sessao/${id}/preparar`)
 
-  return <ExecucaoSessao sessao={detalhe.sessao} exercicio={detalhe.exercicio} />
+  const pacienteNome = await obterNomePaciente(usuario.id, detalhe.sessao.pacienteId)
+
+  return (
+    <ExecucaoSessao
+      sessao={detalhe.sessao}
+      exercicio={detalhe.exercicio}
+      pacienteNome={pacienteNome}
+    />
+  )
 }
